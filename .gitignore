@@ -1,0 +1,22 @@
+# --- Secrets (never commit) ---
+.env
+*.env.local
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.Python
+
+# --- Generated pipeline output (regenerable; per-story clips/renders) ---
+shorts_pipeline/stories/
+
+# --- Heavy generated media (regenerable video renders) ---
+# Source assets (scripts, CSV, README, bgm/narration mp3) stay tracked;
+# only the large rendered videos are excluded.
+*.mp4
+
+# --- OS / editor ---
+.DS_Store
+.idea/

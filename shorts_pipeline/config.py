@@ -1,0 +1,116 @@
+"""Central config + small helpers for the YouTube Shorts pipeline.
+
+Every path here is derived from this file's location, so the whole
+`shorts_pipeline/` folder is portable — move it and nothing breaks.
+"""
+
+from __future__ import annotations
+
+import csv
+import subprocess
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+PIPELINE_DIR = Path(__file__).resolve().parent          # .../yt_reddit_horror/shorts_pipeline
+PROJECT_DIR = PIPELINE_DIR.parent                        # .../yt_reddit_horror
+CSV_PATH = PROJECT_DIR / "yt_reddit_stories.csv"         # 25 stories (No, Video Title, ... Modified Script)
+BGM_PATH = PROJECT_DIR / "bgm_horror.mp3"                # suspenseful music bed (reused for every story)
+STORIES_DIR = PIPELINE_DIR / "stories"                   # per-story output folders live here
+
+# Load API keys from a local .env (never committed — see .gitignore). Checks the
+# project root and this pipeline folder; real environment variables always win.
+try:
+    from dotenv import load_dotenv
+
+    for _env in (PROJECT_DIR / ".env", PIPELINE_DIR / ".env"):
+        load_dotenv(_env)
+except ModuleNotFoundError:
+    pass
+
+# ---------------------------------------------------------------------------
+# Narration (edge-tts) — same voice as the existing story-1 pipeline
+# ---------------------------------------------------------------------------
+TTS_VOICE = "en-US-GuyNeural"
+TTS_RATE = "-8%"
+
+# ---------------------------------------------------------------------------
+# Prompt splitting (Claude / Anthropic API)
+# ---------------------------------------------------------------------------
+# Reads ANTHROPIC_API_KEY from the environment.
+CLAUDE_MODEL = "claude-opus-4-8"
+
+# ---------------------------------------------------------------------------
+# Video generation (Google Veo 3 via the Gemini API)
+# ---------------------------------------------------------------------------
+# Reads GEMINI_API_KEY from the environment.
+#
+# Model IDs vary by the access your key has. "Fast" tier is the default (≈$0.15/s,
+# 720p, ~5x cheaper than Standard). If a generate call 404s on the model name,
+# run:  python -c "from google import genai; [print(m.name) for m in genai.Client().models.list()]"
+# and pick the veo-*-fast id your key can see, then set it here.
+#
+# Common alternatives:
+#   veo-3.1-fast-generate-preview   (Veo 3.1 Fast — default below)
+#   veo-3.1-generate-preview        (Veo 3.1 Standard/Quality — ~$0.40/s)
+#   veo-3.0-fast-generate-001       (Veo 3.0 Fast)
+#   veo-3.0-generate-001            (Veo 3.0 Standard)
+VEO_MODEL = "veo-3.1-fast-generate-preview"
+
+VEO_ASPECT_RATIO = "9:16"   # vertical, native to Shorts — no cropping needed
+VEO_RESOLUTION = "720p"     # Fast tier; bump to "1080p" on the Standard tier
+CLIP_SECONDS = 8            # Veo 3 clips are 8s max; the whole short is many clips stitched together
+
+# Shot-to-shot continuity: seed each clip with the previous clip's final frame
+# (Veo 3.1 image-to-video), so shots flow into one another instead of cutting to
+# unrelated footage. Set False for independent b-roll shots.
+CONTINUITY = True
+
+# Keep baked-in captions, watermarks, and Veo's own dialogue out of the clips —
+# we overlay our own narration + music, so the visuals must be clean.
+VEO_NEGATIVE_PROMPT = (
+    "text, captions, subtitles, watermark, logo, on-screen words, "
+    "spoken dialogue, talking, singing, lyrics, "
+    "cartoon, low quality, blurry, distorted, warped"
+)
+
+# ---------------------------------------------------------------------------
+# Final render (ffmpeg)
+# ---------------------------------------------------------------------------
+TARGET_W, TARGET_H = 1080, 1920   # 9:16 1080p output
+NARRATION_VOLUME = 1.0
+BGM_VOLUME = 0.35                  # music sits under the voiceover
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def story_dir(story_no: int) -> Path:
+    """Output folder for a story. The folder name IS the story number."""
+    d = STORIES_DIR / str(story_no)
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def read_story(story_no: int) -> dict[str, str]:
+    """Return the CSV row for a story number (1-indexed, matching the 'No' column)."""
+    with CSV_PATH.open(newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            if int(row["No"]) == story_no:
+                return row
+    raise ValueError(f"Story #{story_no} not found in {CSV_PATH}")
+
+
+def audio_duration_seconds(path: Path) -> float:
+    """Return the duration of an audio/video file in seconds via ffprobe."""
+    out = subprocess.check_output(
+        [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ],
+        text=True,
+    )
+    return float(out.strip())

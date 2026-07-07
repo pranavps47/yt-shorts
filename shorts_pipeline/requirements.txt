@@ -1,0 +1,6 @@
+# Python deps for the Shorts pipeline. ffmpeg + ffprobe must also be on PATH.
+anthropic>=0.40           # prompt splitting (Claude API)
+google-genai>=1.0         # Veo 3 video generation (Gemini API)
+edge-tts>=6.1             # narration / voiceover
+pydantic>=2.0             # structured-output schema for the prompt splitter
+python-dotenv>=1.0        # load API keys from .env
