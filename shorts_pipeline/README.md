@@ -10,6 +10,14 @@ architecture, cost, and how to run it.
 
 ---
 
+## Published
+
+| Story | Title | Watch |
+|-------|-------|-------|
+| **2** | I Babysat For A New Family — The Security Camera In The Living Room Wasn't Theirs | [▶ YouTube Short](https://youtube.com/shorts/QZmmy4q1Pls) |
+
+---
+
 ## Decisions (locked)
 
 | Question | Decision |
