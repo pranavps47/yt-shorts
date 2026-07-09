@@ -163,6 +163,10 @@ stories/
   chain resets and the next clip starts fresh. The split prompt also tells Claude to
   write shots that continue the same space/subject. Set `CONTINUITY = False` for
   independent b-roll shots (each generated on its own).
+- **Shorts length cap:** YouTube Shorts must be ≤ 3 min. If the assembled cut runs
+  longer, `edit_short.py` speeds the whole thing up (video + audio in sync, voice
+  pitch preserved) to land just under the cap — no scene is dropped. Tune or disable
+  via `SHORTS_MAX_SECONDS` (default `180`; set `0` to keep full length).
 - **Captions:** `narration.srt` is produced per story. Upload it in YouTube Studio,
   or burn captions in a later ffmpeg pass if you want them on-screen.
 - **Batching:** once story 1 looks right, run `python run_story.py --all` (mind the

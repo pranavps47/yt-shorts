@@ -117,6 +117,13 @@ TARGET_W, TARGET_H = 1080, 1920   # 9:16 1080p output
 NARRATION_VOLUME = 1.0
 BGM_VOLUME = 0.35                  # music sits under the voiceover
 
+# YouTube Shorts must be <= 3 min. If the assembled cut runs longer, edit_short
+# speeds the whole thing up — video + audio in sync, voice pitch preserved (via
+# atempo) — to land SHORTS_SAFETY_MARGIN seconds under this cap. Nothing is cut,
+# so every scene stays in. Set SHORTS_MAX_SECONDS=0 to disable and keep full length.
+SHORTS_MAX_SECONDS = float(os.environ.get("SHORTS_MAX_SECONDS") or 180)
+SHORTS_SAFETY_MARGIN = 4.0        # land this many seconds under the cap
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -149,3 +156,25 @@ def audio_duration_seconds(path: Path) -> float:
         text=True,
     )
     return float(out.strip())
+
+
+def shorts_speedup(content_seconds: float) -> float:
+    """Speed factor (>= 1.0) to bring a `content_seconds`-long cut safely under
+    the Shorts cap. Returns 1.0 (no change) when it already fits or when
+    SHORTS_MAX_SECONDS is 0/disabled — never slows a short clip down."""
+    if SHORTS_MAX_SECONDS <= 0:
+        return 1.0
+    target = SHORTS_MAX_SECONDS - SHORTS_SAFETY_MARGIN
+    speed = content_seconds / target
+    return speed if speed > 1.0 else 1.0
+
+
+def atempo_chain(speed: float) -> str:
+    """ffmpeg `atempo` filter string for an arbitrary speed. One atempo instance
+    handles 0.5–2.0; chain instances for larger factors (pitch is preserved)."""
+    parts, s = [], speed
+    while s > 2.0:
+        parts.append("atempo=2.0")
+        s /= 2.0
+    parts.append(f"atempo={s:.6f}")
+    return ",".join(parts)

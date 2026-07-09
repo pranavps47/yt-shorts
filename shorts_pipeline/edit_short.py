@@ -59,19 +59,39 @@ def edit(story_no: int) -> Path:
     all_video = norm_dir / "all_video.mp4"
     _run(["ffmpeg", "-f", "concat", "-safe", "0", "-i", str(concat_txt), "-c", "copy", "-y", str(all_video)])
 
-    # Mix narration + looped BGM; cut final to the narration length.
+    # After -shortest the cut runs min(video, narration). If that's over the
+    # Shorts cap, speed the whole thing up (video + audio in sync) so it fits —
+    # no scene is dropped. Voice pitch is preserved via atempo.
+    content_dur = min(config.audio_duration_seconds(all_video),
+                      config.audio_duration_seconds(narration))
+    speed = config.shorts_speedup(content_dur)
+
+    # Mix narration (full) + looped BGM (ducked); cut final to the narration length.
     print(f"[edit] mixing narration + music -> {final.name}")
+    audio_mix = (
+        f"[1:a]volume={config.NARRATION_VOLUME}[narr];"
+        f"[2:a]volume={config.BGM_VOLUME}[bgm];"
+        f"[narr][bgm]amix=inputs=2:duration=first:normalize=0[mix]"
+    )
+    if speed > 1.0:
+        print(f"[edit]   {content_dur:.1f}s > {config.SHORTS_MAX_SECONDS:.0f}s cap "
+              f"-> speeding {speed:.3f}x to ~{content_dur / speed:.1f}s")
+        filter_complex = (f"[0:v]setpts=PTS/{speed:.6f}[v];"
+                          f"{audio_mix};[mix]{config.atempo_chain(speed)}[aout]")
+        vcodec, vmap = ["-c:v", "libx264", "-pix_fmt", "yuv420p",
+                        "-preset", "veryfast", "-crf", "20"], "[v]"
+    else:
+        filter_complex = f"{audio_mix};[mix]anull[aout]"
+        vcodec, vmap = ["-c:v", "copy"], "0:v"
     _run([
         "ffmpeg",
         "-i", str(all_video),
         "-i", str(narration),
         "-stream_loop", "-1", "-i", str(config.BGM_PATH),
-        "-filter_complex",
-        f"[1:a]volume={config.NARRATION_VOLUME}[narr];"
-        f"[2:a]volume={config.BGM_VOLUME}[bgm];"
-        f"[narr][bgm]amix=inputs=2:duration=first:normalize=0[aout]",
-        "-map", "0:v", "-map", "[aout]",
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-filter_complex", filter_complex,
+        "-map", vmap, "-map", "[aout]",
+        *vcodec, "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
         "-shortest", "-y", str(final),
     ])
 
