@@ -13,10 +13,12 @@ Pipeline:
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 from pathlib import Path
 
 import config
+import sync
 
 # Cover-scale to fill 1080x1920 then centre-crop (clips are already 9:16, so this
 # just standardizes resolution/fps across clips before concat).
@@ -26,6 +28,27 @@ ENC = ["-r", "30", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfas
 
 def _run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _scene_widths(out_dir: Path, narration: Path) -> dict[int, float] | None:
+    """Map each scene index -> the seconds it should stay on screen, synced to
+    the narration. Returns None (caller keeps full-length clips) when the
+    per-word timings or scene prompts aren't available."""
+    words_path = out_dir / "narration_words.json"
+    prompts_path = out_dir / "prompts.json"
+    if not (words_path.exists() and prompts_path.exists()):
+        return None
+    try:
+        scenes = sorted(json.loads(prompts_path.read_text())["scenes"],
+                        key=lambda s: s["index"])
+        segments = json.loads(words_path.read_text())
+    except (KeyError, ValueError, TypeError):
+        return None
+    excerpts = [s.get("narration_excerpt", "") for s in scenes]
+    widths = sync.scene_widths(excerpts, segments, config.audio_duration_seconds(narration))
+    if not widths:
+        return None
+    return {s["index"]: w for s, w in zip(scenes, widths)}
 
 
 def edit(story_no: int) -> Path:
@@ -45,12 +68,30 @@ def edit(story_no: int) -> Path:
     norm_dir = out_dir / "clips_norm"
     norm_dir.mkdir(exist_ok=True)
 
+    # Sync each clip to the narration: hold it exactly as long as its line is
+    # spoken (trim if the line is short, slow-mo to fill if it's long). Without
+    # timings we fall back to each clip's native length.
+    width_by_idx = _scene_widths(out_dir, narration)
     print(f"[edit] story #{story_no}: normalizing {len(clips)} clips to "
-          f"{config.TARGET_W}x{config.TARGET_H}")
+          f"{config.TARGET_W}x{config.TARGET_H}"
+          + (" (synced to narration)" if width_by_idx else ""))
     norm_clips: list[Path] = []
     for clip in clips:
         norm = norm_dir / clip.name
-        _run(["ffmpeg", "-i", str(clip), "-vf", COVER_CROP, *ENC, str(norm)])
+        d = None
+        if width_by_idx is not None and clip.stem.isdigit():
+            d = width_by_idx.get(int(clip.stem))
+        if d is None:
+            _run(["ffmpeg", "-i", str(clip), "-vf", COVER_CROP, *ENC, str(norm)])
+        else:
+            src = config.audio_duration_seconds(clip)
+            if d <= src:
+                # trim to the spoken window (native speed)
+                _run(["ffmpeg", "-i", str(clip), "-vf", COVER_CROP, "-t", f"{d:.3f}", *ENC, str(norm)])
+            else:
+                # stretch (slow-mo) to fill a window longer than the clip
+                vf = f"{COVER_CROP},setpts=PTS*{d / src:.6f}"
+                _run(["ffmpeg", "-i", str(clip), "-vf", vf, "-t", f"{d:.3f}", *ENC, str(norm)])
         norm_clips.append(norm)
 
     # Concatenate normalized clips (all share codec/params → stream copy).
