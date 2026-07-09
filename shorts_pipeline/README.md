@@ -62,16 +62,26 @@ so the final video can be cut precisely to the narration.
 ## Prerequisites
 
 ```bash
-pip install -r requirements.txt          # anthropic, google-genai, edge-tts, pydantic, python-dotenv
 # ffmpeg + ffprobe must be on PATH (brew install ffmpeg)
+python3 -m venv .venv                     # use a venv (avoids system-Python arch/pip issues)
+source .venv/bin/activate                 # or call .venv/bin/python directly
+pip install --upgrade pip
+pip install -r requirements.txt           # anthropic, google-genai, edge-tts, pydantic, python-dotenv
 
-cp .env.example .env                      # then edit .env and paste in your keys
-#   GEMINI_API_KEY=...   Veo 3 (Gemini API)
-#   ANTHROPIC_API_KEY=... Claude (prompt splitting)
+cp .env.example .env                      # then edit .env
 ```
 
-`.env` is loaded automatically (via `python-dotenv`) and is **gitignored** — it is
-never committed. Real environment variables, if set, take precedence over `.env`.
+**Authentication**
+
+- **Veo 3 (required):** set `GEMINI_API_KEY` in `.env`. Needs Veo access + billing.
+- **Claude (prompt splitting):** either
+  - **OAuth, keyless** — `brew install anthropics/tap/ant` then `ant auth login` once
+    (logs in with your Anthropic account; no key in `.env`), **or**
+  - **API key** — set `ANTHROPIC_API_KEY` in `.env`.
+
+`.env` is loaded automatically (via `python-dotenv`) and is **gitignored**. A blank
+`ANTHROPIC_API_KEY` is ignored so it won't shadow an OAuth login. Real environment
+variables take precedence over `.env`.
 
 > **Veo model ID.** `config.VEO_MODEL` defaults to `veo-3.1-fast-generate-preview`.
 > If a generate call 404s, list what your key can see and pick the matching
@@ -84,6 +94,9 @@ never committed. Real environment variables, if set, take precedence over `.env`
 ---
 
 ## Usage
+
+Activate the venv first (`source .venv/bin/activate`), or prefix commands with
+`.venv/bin/python`.
 
 ```bash
 # Build story 1 end-to-end (default scope), then review stories/1/1_final_vertical.mp4

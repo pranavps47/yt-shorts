@@ -7,6 +7,7 @@ Every path here is derived from this file's location, so the whole
 from __future__ import annotations
 
 import csv
+import os
 import subprocess
 from pathlib import Path
 
@@ -29,6 +30,14 @@ try:
 except ModuleNotFoundError:
     pass
 
+# A blank ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN still "wins" the SDK's auth
+# precedence and shadows an `ant auth login` OAuth profile. Drop empties so you
+# can authenticate Claude via OAuth (no key) instead. (GEMINI_API_KEY must be a
+# real key — Veo has no OAuth path.)
+for _k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+    if not os.environ.get(_k, "").strip():
+        os.environ.pop(_k, None)
+
 # ---------------------------------------------------------------------------
 # Narration (edge-tts) — same voice as the existing story-1 pipeline
 # ---------------------------------------------------------------------------
@@ -40,6 +49,22 @@ TTS_RATE = "-8%"
 # ---------------------------------------------------------------------------
 # Reads ANTHROPIC_API_KEY from the environment.
 CLAUDE_MODEL = "claude-opus-4-8"
+
+# ---------------------------------------------------------------------------
+# Backend selection — which service generates the clips (see backends.py)
+#   VIDEO_BACKEND=gemini  -> Google Veo (default; needs GEMINI_API_KEY)
+#   VIDEO_BACKEND=fal     -> fal.ai hosted open models (needs FAL_KEY; $10 free on signup)
+# ---------------------------------------------------------------------------
+VIDEO_BACKEND = (os.environ.get("VIDEO_BACKEND") or "gemini").strip().lower()
+
+# fal.ai settings (used when VIDEO_BACKEND=fal). Reads FAL_KEY from the environment.
+# Text-to-video model. Override with FAL_MODEL. Kling is a solid, credit-cheap default;
+# swap to an open model like "fal-ai/wan/v2.2-a14b/text-to-video" or an LTX id if preferred.
+FAL_MODEL = os.environ.get("FAL_MODEL") or "fal-ai/kling-video/v1.6/standard/text-to-video"
+# Optional image-to-video model for continuity (leave empty to disable on fal).
+FAL_I2V_MODEL = os.environ.get("FAL_I2V_MODEL") or ""
+# Seconds per clip (model-dependent; Kling accepts "5" or "10").
+FAL_DURATION = os.environ.get("FAL_DURATION") or "5"
 
 # ---------------------------------------------------------------------------
 # Video generation (Google Veo 3 via the Gemini API)
@@ -56,7 +81,9 @@ CLAUDE_MODEL = "claude-opus-4-8"
 #   veo-3.1-generate-preview        (Veo 3.1 Standard/Quality — ~$0.40/s)
 #   veo-3.0-fast-generate-001       (Veo 3.0 Fast)
 #   veo-3.0-generate-001            (Veo 3.0 Standard)
-VEO_MODEL = "veo-3.1-fast-generate-preview"
+# Override per run with the VEO_MODEL env var, e.g.
+#   VEO_MODEL=veo-3.1-lite-generate-preview .venv/bin/python run_story.py 1
+VEO_MODEL = os.environ.get("VEO_MODEL") or "veo-3.1-fast-generate-preview"
 
 VEO_ASPECT_RATIO = "9:16"   # vertical, native to Shorts — no cropping needed
 VEO_RESOLUTION = "720p"     # Fast tier; bump to "1080p" on the Standard tier
@@ -64,8 +91,9 @@ CLIP_SECONDS = 8            # Veo 3 clips are 8s max; the whole short is many cl
 
 # Shot-to-shot continuity: seed each clip with the previous clip's final frame
 # (Veo 3.1 image-to-video), so shots flow into one another instead of cutting to
-# unrelated footage. Set False for independent b-roll shots.
-CONTINUITY = True
+# unrelated footage. Override per run with CONTINUITY=0 (e.g. the Lite tier may
+# not support image-to-video).
+CONTINUITY = os.environ.get("CONTINUITY", "1").strip().lower() not in ("0", "false", "no", "")
 
 # Keep baked-in captions, watermarks, and Veo's own dialogue out of the clips —
 # we overlay our own narration + music, so the visuals must be clean.
@@ -73,6 +101,13 @@ VEO_NEGATIVE_PROMPT = (
     "text, captions, subtitles, watermark, logo, on-screen words, "
     "spoken dialogue, talking, singing, lyrics, "
     "cartoon, low quality, blurry, distorted, warped"
+)
+
+# Some tiers (Veo 3.1 Lite) reject `negativePrompt` with a 400. Auto-disable it
+# for lite models; override with VEO_NEGATIVE=0/1.
+VEO_USE_NEGATIVE_PROMPT = (
+    os.environ.get("VEO_NEGATIVE", "0" if "lite" in VEO_MODEL.lower() else "1")
+    .strip().lower() not in ("0", "false", "no", "")
 )
 
 # ---------------------------------------------------------------------------

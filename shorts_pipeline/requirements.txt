@@ -4,3 +4,4 @@ google-genai>=1.0         # Veo 3 video generation (Gemini API)
 edge-tts>=6.1             # narration / voiceover
 pydantic>=2.0             # structured-output schema for the prompt splitter
 python-dotenv>=1.0        # load API keys from .env
+fal-client>=0.5           # optional: alternative video backend (fal.ai hosted open models)

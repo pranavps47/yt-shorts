@@ -6,8 +6,12 @@ beats and writes a detailed vertical-horror prompt for each.
 
 Output: stories/<n>/prompts.json  (you can hand-edit this before generating).
 
-Uses the Anthropic Python SDK (reads ANTHROPIC_API_KEY), model claude-opus-4-8,
-adaptive thinking, and structured outputs so the result is always valid JSON.
+Uses the Anthropic Python SDK, model claude-opus-4-8, adaptive thinking, and
+structured outputs so the result is always valid JSON.
+
+Claude auth (either works, no key needed for the first):
+  - OAuth:  run `ant auth login` once (Anthropic CLI) — keyless.
+  - API key: set ANTHROPIC_API_KEY (env or shorts_pipeline/.env).
 """
 
 from __future__ import annotations
@@ -74,15 +78,22 @@ def split(story_no: int, num_scenes: int) -> Path:
     out_path = out_dir / "prompts.json"
 
     print(f"[split] story #{story_no} -> {num_scenes} scene prompts via {config.CLAUDE_MODEL}")
-    client = anthropic.Anthropic()
-    response = client.messages.parse(
-        model=config.CLAUDE_MODEL,
-        max_tokens=16000,
-        thinking={"type": "adaptive"},
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": _build_user_prompt(row, num_scenes)}],
-        output_format=SceneList,
-    )
+    client = anthropic.Anthropic()  # uses ANTHROPIC_API_KEY, or an `ant auth login` OAuth profile
+    try:
+        response = client.messages.parse(
+            model=config.CLAUDE_MODEL,
+            max_tokens=16000,
+            thinking={"type": "adaptive"},
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": _build_user_prompt(row, num_scenes)}],
+            output_format=SceneList,
+        )
+    except anthropic.AuthenticationError as e:
+        raise SystemExit(
+            "Claude auth failed. Either run `ant auth login` (keyless OAuth) or set "
+            "ANTHROPIC_API_KEY in shorts_pipeline/.env.\n"
+            f"  underlying error: {e}"
+        )
     result = response.parsed_output
     if result is None:
         raise RuntimeError(f"Claude did not return a valid scene list (stop_reason={response.stop_reason})")
